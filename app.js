@@ -6,18 +6,34 @@
 
 const { PARTS, VARIANTS, PHASES, STEPS, GENERAL } = window.OFFICE;
 
-// ================================================================ Sprache (de / en)
-// Die Inhalte sind deutsch hinterlegt; T() liefert die Übersetzung aus en.js (Schlüssel = deutscher Text).
+// ================================================================ Sprache (je Marke: OFFICE de/en, FALLBROOK en/es)
+// Die Inhalte sind deutsch hinterlegt; T() liefert die Übersetzung aus en.js / es.js (Schlüssel = deutscher Text).
+// Fehlt eine spanische Übersetzung, gilt die englische.
+const I18N = {
+  en: { dict: window.I18N_EN, html: window.I18N_EN_HTML, general: window.I18N_EN_GENERAL },
+  es: { dict: window.I18N_ES, html: window.I18N_ES_HTML, general: window.I18N_ES_GENERAL }
+};
 let LANG = null;
 try { LANG = localStorage.getItem(BR.storageKey); } catch (e) { /* ohne Speicher */ }
-if (LANG !== 'de' && LANG !== 'en') LANG = BR.defaultLang || (/^de/i.test(navigator.language || 'de') ? 'de' : 'en');
+if (!BR.langs.includes(LANG)) {
+  const nav = (navigator.language || '').slice(0, 2).toLowerCase();
+  LANG = BR.langs.includes(nav) ? nav : BR.langs[0];
+}
 // BR.text: markenspezifische Anpassung (FALLBROOK: CRL-Artikelnummern, Zoll, Produktname)
 const RT = BR.product.toLowerCase();   // Adresse: #/office/… bzw. #/fallbrook/…
-const T = s => BR.text((LANG === 'en' && s != null && window.I18N_EN && window.I18N_EN[s] != null) ? window.I18N_EN[s] : s);
-const THtml = h => {
-  if (LANG !== 'en' || !h) return BR.text(h);
-  let o = h; (window.I18N_EN_HTML || []).forEach(([a, b]) => { o = o.split(a).join(b); }); return BR.text(o);
+const lookup = (l, s) => I18N[l] && I18N[l].dict && I18N[l].dict[s] != null ? I18N[l].dict[s] : null;
+const T = s => {
+  if (s == null || LANG === 'de') return BR.text(s);
+  const v = lookup(LANG, s) ?? lookup('en', s);
+  return BR.text(v ?? s);
 };
+const THtml = h => {
+  if (LANG === 'de' || !h) return BR.text(h);
+  let o = h; ((I18N[LANG] && I18N[LANG].html) || []).forEach(([a, b]) => { o = o.split(a).join(b); }); return BR.text(o);
+};
+// Sprachumschalter mit den Sprachen der Marke
+const LANG_NAMES = { de: 'Deutsch', en: 'English', es: 'Español' };
+document.querySelector('.lang-switch').innerHTML = BR.langs.map(l => `<button data-lang="${l}" title="${LANG_NAMES[l]}">${l.toUpperCase()}</button>`).join('');
 function setLang(l) {
   LANG = l;
   try { localStorage.setItem(BR.storageKey, l); } catch (e) { /* ohne Speicher */ }
@@ -28,6 +44,7 @@ function setLang(l) {
   document.querySelectorAll('.lang-switch button').forEach(b => b.classList.toggle('active', b.dataset.lang === l));
 }
 // Marke: Titel und Logo bzw. Schriftzug
+document.documentElement.dataset.brand = BR.id;
 document.title = BR.title;
 if (!BR.logo) { const lg = document.querySelector('.logo'); if (lg) lg.outerHTML = `<span class="wordmark">${BR.product}</span>`; }
 // statische Texte merken, bevor sie übersetzt werden
@@ -215,10 +232,10 @@ function rerender() {
       edge: new THREE.LineBasicMaterial({ color: 0x33363b }),
       edgeGlass: new THREE.LineBasicMaterial({ color: 0x6f9aa3, transparent: true, opacity: 0.7 }),
       edgeWall: new THREE.LineBasicMaterial({ color: 0xc9c6bf }),
-      edgeHl: new THREE.LineBasicMaterial({ color: 0x000000 }),
-      hl: new THREE.MeshStandardMaterial({ color: 0x1a1a1a, metalness: 0.1, roughness: 0.5 }),
-      hlGlass: new THREE.MeshPhysicalMaterial({ color: 0x555555, transparent: true, opacity: 0.3, depthWrite: false, side: THREE.DoubleSide }),
-      marker: new THREE.MeshBasicMaterial({ color: 0x000000, transparent: true, opacity: 0.15, depthWrite: false })
+      edgeHl: new THREE.LineBasicMaterial({ color: BR.hl3d ? BR.hl3d.edge : 0x000000 }),
+      hl: new THREE.MeshStandardMaterial({ color: BR.hl3d ? BR.hl3d.mesh : 0x1a1a1a, metalness: 0.1, roughness: 0.5 }),
+      hlGlass: new THREE.MeshPhysicalMaterial({ color: BR.hl3d ? BR.hl3d.mesh : 0x555555, transparent: true, opacity: 0.3, depthWrite: false, side: THREE.DoubleSide }),
+      marker: new THREE.MeshBasicMaterial({ color: BR.hl3d ? BR.hl3d.mesh : 0x000000, transparent: true, opacity: 0.15, depthWrite: false })
     });
 
     // Klick auf ein Bauteil → passender Montageschritt
@@ -704,8 +721,8 @@ function rerender() {
 
   const partRow = k => {
     const p = PARTS[k];
-    return `<button class="part-row" data-img="${p.img}" title="${T('Antippen zum Vergrößern')}">
-      <img src="${p.img}" alt="" loading="lazy">
+    return `<button class="part-row" data-img="${BR.img(p.img)}" title="${T('Antippen zum Vergrößern')}">
+      <img src="${BR.img(p.img)}" alt="" loading="lazy">
       <span class="txt">${esc(T(p.name))}<small>${esc(BR.nr(p))}</small></span>
       ${p.pos || /^\d+$/.test(String(k)) ? `<span class="n">${p.pos || k}</span>` : ''}
     </button>`;
@@ -740,7 +757,7 @@ function rerender() {
       content = `<div class="pad"><p class="intro">${T('Bauteile für')} ${esc(cfgLabel(cfg))}. ${T('Antippen zum Vergrößern.')}</p>
         <div class="parts">${used.map(partRow).join('')}</div></div>`;
     } else {
-      content = `<div class="pad general">${BR.text(LANG === 'en' && window.I18N_EN_GENERAL ? window.I18N_EN_GENERAL : GENERAL)}</div>`;
+      content = `<div class="pad general">${BR.text(LANG !== 'de' && I18N[LANG] && I18N[LANG].general ? I18N[LANG].general : GENERAL)}</div>`;
     }
     body.innerHTML = tabs + content;
   }
