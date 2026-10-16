@@ -4,7 +4,7 @@
 (function () {
   'use strict';
 
-const { PARTS, VARIANTS, PHASES, STEPS, GENERAL } = window.OFFICE;
+const { PARTS, PART_ORDER, VARIANTS, PHASES, STEPS, GENERAL } = window.OFFICE;
 
 // ================================================================ Sprache (je Marke: OFFICE de/en, FALLBROOK en/es)
 // Die Inhalte sind deutsch hinterlegt; T() liefert die Übersetzung aus en.js / es.js (Schlüssel = deutscher Text).
@@ -597,7 +597,7 @@ function rerender() {
     const lines = F.labels.flatMap(l => l.to.map(t => `<line x1="${X(l.at[0])}" y1="${l.at[1]}" x2="${X(t[0])}" y2="${t[1]}"/>`)).join('');
     const dots = F.labels.flatMap(l => l.to.map(t => `<i class="f-dot" style="${at(t)}"></i>`)).join('');
     const labels = F.labels.map(l => `<span class="f-lbl${/^\d/.test(l.n) ? '' : ' word'}" style="${at(l.at)}" title="${esc(posTitle(l.n))}">${esc(l.n)}</span>`).join('');
-    const notes = F.notes.filter(n => !n.long).map(n => `<span class="f-note" style="${at(n.at)};transform:rotate(${-(n.rot || 0)}deg) translateY(-50%)">${esc(T(n.t))}</span>`).join('');
+    const notes = F.notes.filter(n => !n.long).map(n => `<span class="f-note${n.head ? ' head' : ''}" style="${at(n.at)};transform:${n.head ? "translate(-50%,-50%)" : `rotate(${-(n.rot || 0)}deg) translateY(-50%)`}">${esc(T(n.t))}</span>`).join('');
     // Richtig/Falsch: Kreuz-Skizzen bekommen ✕, die übrigen Felder ✓; Teilabbildungen tragen ihre Markierung selbst
     const big = b => (b[2] - b[0]) * (b[3] - b[1]) > F.w * F.h * 0.8;
     const hit = (a, b) => a[0] < b[2] && a[2] > b[0] && a[1] < b[3] && a[3] > b[1];
@@ -637,10 +637,18 @@ function rerender() {
   function workStep(item, cfg) {
     const it = typeof item === 'string' ? { t: item } : item;
     const figs = (val(it.fig, cfg) || []).map(f => val(f, cfg)).filter(Boolean);
-    return `<li><div class="ws-text">${T(it.t)}</div>${figs.length ? `
+    return `<li><div class="ws-text">${T(val(it.t, cfg))}</div>${figs.length ? `
       <div class="ws-figs${it.row ? ' row' : ''}"${it.row ? ` style="grid-template-columns:repeat(${figs.length},1fr)"` : ''}>
         ${figs.map(figItem).join('')}
-      </div>${it.cap ? `<div class="ws-cap">${esc(T(it.cap))}</div>` : ''}` : ''}</li>`;
+      </div>${it.cap ? `<div class="ws-cap">${esc(T(val(it.cap, cfg)))}</div>` : ''}` : ''}</li>`;
+  }
+
+  // Hinweis: Text oder { t, tools: [{ img, name, nr, crl }] } – Hilfsmittel klein mit Name und Artikelnummer
+  function noteHTML(n) {
+    if (typeof n === 'string') return `<div class="note">${T(n)}</div>`;
+    const tools = (n.tools || []).map(x => `<button class="note-tool"${x.img ? ` data-img="${x.img}"` : ''} aria-label="${T('Zeichnung vergrößern')}">
+      ${x.img ? `<img src="${x.img}" alt="" loading="lazy">` : ''}<span><b>${esc(T(x.name))}</b><small>${esc(BR.nr(x))}</small></span></button>`).join('');
+    return `<div class="note">${T(n.t)}${tools ? `<div class="note-tools">${tools}</div>` : ''}</div>`;
   }
 
   function cfgLabel(cfg) {
@@ -719,11 +727,12 @@ function rerender() {
   const panel = $('#panel');
   const body = $('#panelBody');
 
+  const partsOf = (s, cfg) => (val(s.parts, cfg) || []).filter(k => PARTS[k] && (!PARTS[k].brand || PARTS[k].brand === BR.id));
   const partRow = k => {
     const p = PARTS[k];
-    return `<button class="part-row" data-img="${BR.img(p.img)}" title="${T('Antippen zum Vergrößern')}">
-      <img src="${BR.img(p.img)}" alt="" loading="lazy">
-      <span class="txt">${esc(T(p.name))}<small>${esc(BR.nr(p))}</small></span>
+    return `<button class="part-row"${p.img ? ` data-img="${BR.img(p.img)}" title="${T('Antippen zum Vergrößern')}"` : ''}>
+      ${p.img ? `<img src="${BR.img(p.img)}" alt="" loading="lazy">` : '<span class="no-img"></span>'}
+      <span class="txt">${esc(T(p.name))}${p.optional ? ` <em class="opt-tag">${T('Option')}</em>` : ''}<small>${esc(BR.nr(p))}</small></span>
       ${p.pos || /^\d+$/.test(String(k)) ? `<span class="n">${p.pos || k}</span>` : ''}
     </button>`;
   };
@@ -752,8 +761,9 @@ function rerender() {
         ${html}</ul></div>`;
     } else if (state.tab === 'parts') {
       const used = [];
-      list.forEach(s => (s.parts || []).forEach(p => { if (!used.includes(p)) used.push(p); }));
-      used.sort((a, b) => (isNaN(a) ? 100 : a) - (isNaN(b) ? 100 : b));
+      list.forEach(s => partsOf(s, cfg).forEach(p => { if (!used.includes(p)) used.push(p); }));
+      const ord = k => PART_ORDER.indexOf(isNaN(k) ? k : +k);
+      used.sort((a, b) => ord(a) - ord(b));
       content = `<div class="pad"><p class="intro">${T('Bauteile für')} ${esc(cfgLabel(cfg))}. ${T('Antippen zum Vergrößern.')}</p>
         <div class="parts">${used.map(partRow).join('')}</div></div>`;
     } else {
@@ -781,17 +791,17 @@ function rerender() {
         <div class="small" style="margin-top:6px">${T('Schritt')} ${idx + 1} ${T('von')} ${list.length}</div>
       </div>
 
-      ${step.parts && step.parts.length ? `<div class="section"><h3>${T('Benötigte Teile')}</h3>
-        <div class="parts">${step.parts.map(partRow).join('')}</div></div>` : ''}
+      ${partsOf(step, cfg).length ? `<div class="section"><h3>${T('Benötigte Teile')}</h3>
+        <div class="parts">${partsOf(step, cfg).map(partRow).join('')}</div></div>` : ''}
 
       <div class="section">
         <h3>${T('Montage')}</h3>
         <ol class="steps">${text.map(s => workStep(s, cfg)).join('')}</ol>
       </div>
 
-      ${step.extraHtml ? `<div class="section"><h3>${esc(T(step.extraTitle || ''))}</h3>${THtml(step.extraHtml)}</div>` : ''}
+      ${step.extraHtml ? `<div class="section"><h3>${esc(T(step.extraTitle || ''))}</h3>${THtml(val(step.extraHtml, cfg))}</div>` : ''}
 
-      ${notes.length ? `<div class="section">${notes.map(n => `<div class="note">${T(n)}</div>`).join('')}</div>` : ''}
+      ${notes.length ? `<div class="section">${notes.map(noteHTML).join('')}</div>` : ''}
 
       <div class="guide-nav">
         <button class="btn" data-act="prev" ${idx <= 0 ? 'disabled' : ''}>${T('← Zurück')}</button>

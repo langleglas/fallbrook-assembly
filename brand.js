@@ -50,7 +50,7 @@
   // Amerikanisches Englisch und US-Glasbezeichnungen (FALLBROOK)
   const US_EN = [
     [/toughened safety glass \(ESG\) or laminated safety glass made of ESG \(VSG\)/g, 'tempered glass or laminated tempered glass'],
-    [/aluminium/g, 'aluminum'], [/([Cc])entre/g, '$1enter'], [/([Mm])itred/g, '$1itered'], [/([Mm])itre/g, '$1iter']
+    [/aluminium/g, 'aluminum'], [/stabilis/g, 'stabiliz'], [/([Cc])entre/g, '$1enter'], [/([Mm])itred/g, '$1itered'], [/([Mm])itre/g, '$1iter']
   ];
 
   const BRANDS = {
